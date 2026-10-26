@@ -21,7 +21,7 @@ export const ackKey = (id: string) => `ack:${id}`
 export const muteKey = (id: string) => `mute:${id}`
 export const SETTINGS_KEY = 'settings'
 
-export const DEFAULT_SETTINGS: HubSettings = { lang: 'zh', openOnStart: true, autoOpen: true, divider: false, muteButton: false, taskRows: 12 }
+export const DEFAULT_SETTINGS: HubSettings = { lang: 'zh', openOnStart: true, autoOpen: true, divider: false, muteButton: false, showStatus: false, taskRows: 12 }
 
 export function readSettings(value: unknown): HubSettings {
   const v = (value ?? {}) as Partial<HubSettings>
@@ -31,6 +31,7 @@ export function readSettings(value: unknown): HubSettings {
     autoOpen: v.autoOpen !== false,
     divider: v.divider === true,
     muteButton: v.muteButton === true,
+    showStatus: v.showStatus === true,
     taskRows: typeof v.taskRows === 'number' && v.taskRows >= 3 ? Math.round(v.taskRows) : DEFAULT_SETTINGS.taskRows,
   }
 }
@@ -57,7 +58,7 @@ function isCard(v: unknown): v is Card {
 
 export const isLive = (card: Card, now: number) => now - card.heartbeat <= STALE_MS
 
-export type OpenTask = Task & { sid: string; name: string; hostId?: string }
+export type OpenTask = Task & { sid: string; name: string; project?: string; hostId?: string }
 
 /** Tasks waiting on the person: live sessions only, answered ones dropped at once. */
 export function openTasks(snap: Snapshot, now: number): OpenTask[] {
@@ -67,7 +68,7 @@ export function openTasks(snap: Snapshot, now: number): OpenTask[] {
     .flatMap(card =>
       card.tasks
         .filter(task => !replied.has(`${card.sid}:${task.id}`))
-        .map(task => ({ ...task, sid: card.sid, name: sourceLabel(card), hostId: card.hostId })),
+        .map(task => ({ ...task, sid: card.sid, name: sourceLabel(card), project: card.repo || card.name, hostId: card.hostId })),
     )
     .sort((a, b) => a.createdAt - b.createdAt)
 }
@@ -271,6 +272,7 @@ const EN = {
   settingsTitle: 'Standup settings',
   needsYou: 'To do',
   updates: 'Summary',
+  updateCount: '{n} updates',
   nothingWaiting: 'Nothing is waiting on you.',
   noUpdates: 'No summaries yet. Each session shows up here after a turn that used tools.',
   done: 'Done',
@@ -297,6 +299,7 @@ const EN = {
   openOnStart: 'Open on session start',
   autoOpen: 'Open when a task arrives',
   divider: 'Draggable divider',
+  showStatus: 'Show task count under the prompt',
   muteButton: 'Show "No more like this" on messages',
   on: 'On',
   off: 'Off',
@@ -312,6 +315,7 @@ const ZH: Copy = {
   settingsTitle: 'Standup 设置',
   needsYou: '待办',
   updates: '进展',
+  updateCount: '{n} 条进展',
   nothingWaiting: '没有等你处理的事。',
   noUpdates: '还没有总结。session 跑完一轮用过工具的对话后会出现在这里。',
   done: '完成',
@@ -338,6 +342,7 @@ const ZH: Copy = {
   openOnStart: '会话开始时自动打开',
   autoOpen: '来任务时自动打开',
   divider: '可拖动分隔线',
+  showStatus: '在输入框下显示任务数',
   muteButton: '消息上显示「不再显示这类」',
   on: '开',
   off: '关',

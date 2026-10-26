@@ -174,7 +174,7 @@ test('assign_task puts a task on the panel, on every surface', async ($, on) => 
     expect(await ui.find({ type: 'Text', text: /To do 1/ })).toBeDefined()
     await ui.unmount()
   }
-  expect(calls.status.at(-1)).toBe('1 task needs you · /standup')
+  expect(calls.status.at(-1)).toBeUndefined()
 })
 
 test('assign_task refuses bad input, duplicates and a sixth open task', async ($, on) => {
@@ -227,6 +227,7 @@ test("answering another session's task writes its reply key and hides the task",
     await ui.unmount()
   }
   const ui = await $.ui.mount(pane('terminal'))
+  await ui.press({ key: 'expand-other:t1' })
   await ui.input({ key: 'ans-other:t1', text: 'us-east-1' })
   expect(store.get(replyKey('other', 't1'))).toEqual({ answer: 'us-east-1', at: NOW, by: 'self' })
   expect(await ui.find({ type: 'Text', text: 'Which region should prod use?' })).toBeUndefined()
@@ -315,6 +316,7 @@ test('an answer that looks like a secret is refused', async ($, on) => {
   const { store } = stub(on, { entries: { [cardKey('other')]: otherCard() } })
   await start($)
   const ui = await $.ui.mount(pane('desktop'))
+  await ui.press({ key: 'expand-other:t1' })
   await ui.input({ key: 'ans-other:t1', text: 'sk-ant-api03-AbCdEfGhIjKlMnOpQrStUv' })
   expect(store.get(replyKey('other', 't1'))).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /looks like a secret/ })).toBeDefined()
@@ -423,7 +425,7 @@ test('a turn with tools brings a summary; only new milestones become messages', 
   expect(await ui.find({ type: 'Text', text: 'Login page works end to end' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Merged MR !42/ })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /Summary 1/ })).toBeDefined()
-  expect(await ui.findAll({ type: 'Text', text: /^alpha · ship the login page ·/ })).toHaveLength(1)
+  expect(await ui.find({ key: 'expand-project-alpha' })).toBeDefined()
 
   // Another turn within thirty minutes waits; after that, only the new line is added.
   await $.tool.call({ tool: 'Read', tool_use_id: 'r2', file_path: '/work/alpha/b.ts' } as never).catch(() => undefined)
@@ -477,6 +479,7 @@ test('OK hides a message everywhere; No more like this, once turned on in settin
   const { calls, clock, store } = stub(on, { entries: { [cardKey('other')]: otherCard({ feed, tasks: [] }) } })
   await start($)
   const ui = await $.ui.mount(pane('terminal'))
+  await ui.press({ key: 'expand-project-beta' })
   await ui.press({ key: 'ok-other:f2' })
   expect(store.get('ack:other:f2')).toBe(NOW)
   expect(await ui.find({ type: 'Text', text: /Release 2.0/ })).toBeUndefined()
@@ -563,8 +566,9 @@ test('settings: language, auto-open and divider sync through the store', async (
 
   const settings = await $.ui.mount(pane('terminal', 'standup-settings'))
   await settings.press({ key: 'lang-zh' })
-  expect(store.get('settings')).toEqual({ lang: 'zh', openOnStart: true, autoOpen: true, divider: false, muteButton: false, taskRows: 12 })
+  expect(store.get('settings')).toEqual({ lang: 'zh', openOnStart: true, autoOpen: true, divider: false, muteButton: false, showStatus: false, taskRows: 12 })
   expect(await settings.find({ type: 'Text', text: '语言' })).toBeDefined()
+  await settings.press({ key: 'toggle-showStatus-on' })
   await settings.press({ key: 'toggle-autoOpen-off' })
   expect(((store.get('settings')) as { autoOpen: boolean }).autoOpen).toBe(false)
 
@@ -631,6 +635,7 @@ test('Jump opens the desktop session; terminal sessions and this session show no
   })
   await start($)
   const ui = await $.ui.mount(pane('desktop'))
+  await ui.press({ key: 'expand-other:t1' })
   await ui.press({ key: 'jump-other:t1' })
   expect(calls.run).toEqual([['open', 'claude://claude.ai/epitaxy/local_other']])
   expect(await ui.find({ key: 'jump-term:t9' })).toBeUndefined()
@@ -922,7 +927,9 @@ test('worktree rows identify repo, branch and prompt on both surfaces; heartbeat
   await clock.advance(3_000)
   for (const surface of SURFACES) {
     const ui = await $.ui.mount(pane(surface))
-    expect(await ui.findAll({ type: 'Text', text: /^product · feature\/login · ship the login page/ })).toHaveLength(3)
+    await ui.press({ key: `expand-self:${card.tasks[0]!.id}` })
+    expect(await ui.find({ type: 'Text', text: /^product · feature\/login · ship the login page/ })).toBeDefined()
+    await ui.press({ key: `expand-self:${card.tasks[0]!.id}` })
     await ui.unmount()
   }
   branch = 'fix/login'
@@ -962,7 +969,10 @@ test('host title takes priority and legacy cards still render tasks and feed', a
   expect((store.get(cardKey('self')) as Card).title).toBe('Human title')
   for (const surface of SURFACES) {
     const ui = await $.ui.mount(pane(surface))
-    expect(await ui.findAll({ type: 'Text', text: /^beta(?: ·|$)/ })).toHaveLength(3)
+    expect(await ui.find({ key: 'expand-project-beta' })).toBeDefined()
+    await ui.press({ key: 'expand-other:t1' })
+    expect(await ui.find({ type: 'Text', text: /^beta ·/ })).toBeDefined()
+    await ui.press({ key: 'expand-other:t1' })
     await ui.unmount()
   }
   expect(store.get(cardKey('other'))).toEqual(previous)
@@ -1002,18 +1012,24 @@ test('interleaved projects render contiguous blocks on both surfaces and acknowl
   for (const surface of SURFACES) {
     const ui = await $.ui.mount(pane(surface))
     expect((await ui.findAll({ type: 'Text', text: /^(A|B|Legacy)$/ })).filter(row => row.props.weight === 'semibold').map(textOf)).toEqual([])
+    for (const project of ['A', 'B', 'Legacy']) await ui.press({ key: `expand-project-${project}` })
     expect((await ui.findAll({ type: 'Text', text: /^(A newest|A older|B middle|Legacy oldest)$/ })).map(textOf)).toEqual(['A newest', 'A older', 'B middle', 'Legacy oldest'])
     expect(await ui.find({ type: 'Text', text: /Summary 4/ })).toBeDefined()
+    for (const project of ['A', 'B', 'Legacy']) await ui.press({ key: `expand-project-${project}` })
     await ui.unmount()
   }
   const terminal = await $.ui.mount(pane('terminal'))
+  await terminal.press({ key: 'expand-project-A' })
   await terminal.press({ key: 'ok-a-new' })
+  await terminal.press({ key: 'expand-project-A' })
   await terminal.unmount()
   expect(store.get('ack:a-new')).toBeDefined()
   for (const surface of SURFACES) {
     const ui = await $.ui.mount(pane(surface))
     expect((await ui.findAll({ type: 'Text', text: /^(A|B|Legacy)$/ })).filter(row => row.props.weight === 'semibold').map(textOf)).toEqual([])
+    for (const project of ['A', 'B', 'Legacy']) await ui.press({ key: `expand-project-${project}` })
     expect((await ui.findAll({ type: 'Text', text: /^(A newest|A older|B middle|Legacy oldest)$/ })).map(textOf)).toEqual(['B middle', 'A older', 'Legacy oldest'])
+    for (const project of ['A', 'B', 'Legacy']) await ui.press({ key: `expand-project-${project}` })
     await ui.unmount()
   }
   const desktop = await $.ui.mount(pane('desktop'))
@@ -1099,20 +1115,26 @@ test('unresolved touched paths fall back to legacy card metadata', async () => {
   expect(feedGroups(snapshotOf({ [cardKey('other')]: card }, 'self'))[0]?.project).toBe('fallback')
 })
 
-test('feed metadata uses one ellipsised line and OK shares the headline on both surfaces', async ($, on) => {
+test('compact project summaries expand to one-line feed rows, with source behind expansion', async ($, on) => {
   stub(on, { entries: { [cardKey('other')]: otherCard({ tasks: [], repo: 'video-bench', title: 'A very long title '.repeat(12), feed: [{ id: 'compact', kind: 'milestone', text: 'Stitching works', at: NOW }] }) } })
   await start($)
   for (const surface of SURFACES) {
     const ui = await $.ui.mount(pane(surface))
-    const meta = await ui.find({ type: 'Text', text: /^video-bench ·/ })
-    expect(meta).toBeDefined()
-    expect(meta?.props.wrap).toBe('truncate-end')
-    expect(await ui.find({ key: 'project-heading-video-bench' })).toBeUndefined()
-    const headline = await ui.find({ key: 'headline-compact' })
-    expect(headline?.props.flexDirection).toBe('row')
+    expect(await ui.find({ key: 'feed-compact' })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /^video-bench: Stitching works/ })).toBeDefined()
+    await ui.press({ key: 'expand-project-video-bench' })
+    const headline = await ui.find({ type: 'Text', text: /^✓ Stitching works · video-bench ·/ })
+    expect(headline?.props.wrap).toBe('truncate-end')
+    expect(await ui.find({ key: 'ok-compact' })).toBeDefined()
+    expect((await ui.find({ key: 'feed-line-compact' }))?.props.flexDirection).toBe('row')
     const tree = await ui.drawn()
-    const find = (node: any): any => node?.props?.key === 'headline-compact' ? node : node?.children?.map(find).find(Boolean)
+    const find = (node: any): any => node?.props?.key === 'feed-line-compact' ? node : node?.children?.map(find).find(Boolean)
     expect(JSON.stringify(find(tree))).toContain('ok-compact')
+    expect(await ui.find({ type: 'Text', text: /^video-bench · A very long/ })).toBeUndefined()
+    await ui.press({ key: 'expand-feed-compact' })
+    expect(await ui.find({ type: 'Text', text: /^video-bench · A very long/ })).toBeDefined()
+    await ui.press({ key: 'expand-feed-compact' })
+    await ui.press({ key: 'expand-project-video-bench' })
     await ui.unmount()
   }
 })
@@ -1177,3 +1199,77 @@ test('merge associations require valid exact endpoints and old summary responses
   expect(parseSummary(JSON.stringify({ ...deploy, merged: [{ milestone: deploy.milestones[0], authorized: deploy.authorized[0] }] }))).toEqual(deploy)
   expect(summaryPrompt('', undefined, [])).toContain('Same session, repository, or summary run is NOT evidence')
 })
+
+
+test('previous settings shape preserves preferences and defaults status to off', () => {
+  const previous = { lang: 'en', openOnStart: false, autoOpen: false, divider: true, muteButton: true, taskRows: 8 }
+  expect(readSettings(previous)).toEqual({ ...previous, showStatus: false })
+  expect(readSettings(undefined).showStatus).toBe(false)
+  expect(readSettings({ showStatus: true }).showStatus).toBe(true)
+})
+
+test('status count is opt-in and switching it off clears an existing entry', async ($, on) => {
+  const { calls, clock } = stub(on, { entries: { [cardKey('other')]: otherCard() } })
+  await start($)
+  expect(calls.status.every(text => text === undefined)).toBe(true)
+  const ui = await $.ui.mount(pane('desktop', 'standup-settings'))
+  await ui.press({ key: 'toggle-showStatus-on' })
+  await clock.advance(3_000)
+  expect(calls.status.at(-1)).toBe('1 task needs you · /standup')
+  await ui.press({ key: 'toggle-showStatus-off' })
+  await clock.advance(3_000)
+  expect(calls.status.at(-1)).toBeUndefined()
+})
+
+for (const first of ['tool', 'turn'] as const) {
+  test(`a ${first} hook alone joins when session and prompt hooks never fire`, async ($, on) => {
+    const messages: NonNullable<Opts['messages']> = []
+    const { calls, store } = stub(on, { messages })
+    if (first === 'tool') await $.tool.call({ tool: 'Read', tool_use_id: 'lazy', file_path: '/x' } as never).catch(() => undefined)
+    else await $.turn.complete({ answer: 'Done' } as never)
+    expect((store.get(cardKey('self')) as Card).repo).toBe('alpha')
+    expect(calls.tools).toEqual(['assign_task', 'withdraw_task', 'list_tasks'])
+    messages.push({ role: 'user', text: 'Fix the dashboard', toolUses: [] })
+    await $.turn.complete({ answer: 'Done' } as never)
+    expect((store.get(cardKey('self')) as Card).title).toBe('Fix the dashboard')
+    expect(calls.tools).toHaveLength(3)
+  })
+}
+
+for (const surface of SURFACES) {
+  test(`compact tasks on ${surface} keep actions inline and reveal full details on expansion`, async ($, on) => {
+    const detail = 'Detailed instructions '.repeat(20)
+    const task: Task = { id: 'compact', kind: 'do', title: 'Review the build', detail, createdAt: NOW }
+    const { store } = stub(on, { entries: { [cardKey('other')]: otherCard({ tasks: [task] }) } })
+    await start($)
+    const ui = await $.ui.mount(pane(surface))
+    expect(await ui.find({ type: 'Text', text: detail })).toBeUndefined()
+    expect((await ui.find({ type: 'Text', text: /^Review the build · beta ·/ }))?.props.wrap).toBe('truncate-end')
+    expect(await ui.find({ key: 'done-other:compact' })).toBeDefined()
+    expect(await ui.find({ key: 'skip-other:compact' })).toBeDefined()
+    const line = await ui.find({ key: 'task-line-other:compact' })
+    expect(line?.props.flexDirection).toBe('row')
+    const tree = await ui.drawn()
+    const find = (node: any): any => node?.props?.key === 'task-line-other:compact' ? node : node?.children?.map(find).find(Boolean)
+    expect(JSON.stringify(find(tree))).toContain('done-other:compact')
+    expect(JSON.stringify(find(tree))).toContain('skip-other:compact')
+    await ui.press({ key: 'expand-other:compact' })
+    expect(await ui.find({ type: 'Text', text: detail })).toBeDefined()
+    await ui.press({ key: 'expand-other:compact' })
+    await ui.press({ key: 'done-other:compact' })
+    expect(store.get(replyKey('other', 'compact'))).toEqual({ answer: '', at: NOW, by: 'self' })
+  })
+}
+
+for (const surface of SURFACES) {
+  test(`expanding a choice on ${surface} reveals working options`, async ($, on) => {
+    const task: Task = { id: 'choice', kind: 'choose', title: 'Which region?', options: ['US', 'EU'], createdAt: NOW }
+    const { store } = stub(on, { entries: { [cardKey('other')]: otherCard({ tasks: [task] }) } })
+    await start($)
+    const ui = await $.ui.mount(pane(surface))
+    expect(await ui.find({ key: 'opt-other:choice-0' })).toBeUndefined()
+    await ui.press({ key: 'expand-other:choice' })
+    await ui.press({ key: 'opt-other:choice-1' })
+    expect(store.get(replyKey('other', 'choice'))).toEqual({ answer: 'EU', at: NOW, by: 'self' })
+  })
+}

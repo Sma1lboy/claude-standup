@@ -11,7 +11,11 @@
 
 <p align="center"><a href="README.zh-CN.md">中文说明</a></p>
 
-A Claude Code mod that puts every session on your machine into one panel. The top half, To do, lists what each agent is waiting on you for. The bottom half, Summary, is a stream of what the agents got done: one card per message, newest first, each naming the project it came from.
+A Claude Code mod that puts every session on your machine into one panel. The top half, To do, lists what each agent is waiting on you for. The bottom half, Summary, shows what the agents got done: one compact summary per project, with messages available on expansion.
+
+In managed environments, built-in plugins may skip the classic session/prompt hooks and `prompt.compose`. Steering then falls back to the tool descriptions. Standup also joins and creates its session card on tool calls and turn completion, so these skipped hooks do not prevent registration or updates.
+
+Task counts under the prompt are off by default; enable them in `/standup-settings`. Tasks start as compact rows (expand for details and answers), with three visible before “more”. Updates start as one summary line per project; expand a project to read and acknowledge its rows.
 
 ## Install
 
