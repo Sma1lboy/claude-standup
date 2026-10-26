@@ -51,7 +51,7 @@ export type Mute = { text: string; at: number }
 
 export type Lang = 'en' | 'zh'
 
-export type HubSettings = { lang: Lang; openOnStart: boolean; autoOpen: boolean; divider: boolean; muteButton: boolean; taskRows: number }
+export type HubSettings = { lang: Lang; openOnStart: boolean; autoOpen: boolean; divider: boolean; muteButton: boolean; showStatus: boolean; taskRows: number }
 
 /** Everything the panel draws, read from the store every poll. */
 export type Snapshot = {
@@ -68,6 +68,7 @@ declare module 'claude-code' {
       snap: Snapshot | null
       settings: HubSettings
       errors: Record<string, string>
+      expandedRows: Record<string, boolean>
       showAllTasks: boolean
       bandOpen: boolean
     }

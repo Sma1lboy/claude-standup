@@ -185,7 +185,7 @@ async function poll($: EngineInterface) {
   if (JSON.stringify(await read($, snapAtom)) !== JSON.stringify(snap)) await update($, snapAtom, () => snap)
 
   const open = openTasks(snap, now)
-  $.ui.status(statusText(settings.lang, open.length))
+  $.ui.status(settings.showStatus ? statusText(settings.lang, open.length) : undefined)
 
   const ids = open.map(task => `${task.sid}:${task.id}`)
   const arrived = rt.seenTasks !== undefined && ids.some(id => !rt.seenTasks!.has(id))
@@ -441,20 +441,24 @@ export const register: Register = on => {
     return { result: card.tasks.length ? card.tasks.map(taskLine).join('\n') : 'No open tasks.' }
   })
 
+  // Managed plugins may skip session/prompt hooks; ordinary tool calls still join.
   on('tool.call', async ($, e, next) => {
+    await join($)
     if (e.agentId === undefined) rt.toolsThisTurn += 1
     return next(e)
   }).catch(($, e, next) => next(e))
 
   on('turn.complete', async ($, e, next) => {
-    void join($).catch(() => undefined)
+    await join($)
+    // Recover the first real prompt if it was not yet available at join.
+    await heartbeat($)
     if (e.agentId === undefined) {
       if (rt.toolsThisTurn > 0) rt.summaryDue = true
       rt.toolsThisTurn = 0
       rt.held.clear()
     }
     return next(e)
-  })
+  }).catch(($, e, next) => next(e))
 
   // After a compact, the model has lost the tool results that assigned its tasks: tell it again.
   on('session.compact', async ($, e, next) => {
